@@ -2,50 +2,50 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
-	"strings"
 )
 
+const chunkSize = 8
+const filePath = "messages.txt"
+
 func main() {
-
-	filename := "messages.txt"
-	chunkSize := 8
-
-	file, err := os.Open(filename)
+	file, err := os.Open(filePath)
 	if err != nil {
-		fmt.Println("Error opening file:", err)
-		return
+		log.Fatalf("could not open file: %v", err)
 	}
-	defer file.Close()
 
-	reader := bufio.NewReader(file)
-	buffer := make([]byte, chunkSize)
-	curLine := ""
+	linesChan := getLinesChannel(file)
+	for line := range linesChan {
+		fmt.Println("read:", line)
+	}
+}
 
-	for {
-		n, err := reader.Read(buffer)
-		if err != nil {
-			if err == io.EOF {
-				if len(curLine) > 0 {
-					fmt.Printf("read: %s\n", curLine)
-				}
-				break
-			}
-			fmt.Println("Error reading file:", err)
-			return
-		}
-		if n > 0 {
-			splitLine := strings.Split(string(buffer[:n]), "\n")
-			for i, line := range splitLine {
-				if i == len(splitLine)-1 {
-					curLine += line
+func getLinesChannel(f io.ReadCloser) <-chan string {
+	linesOutput := make(chan string)
+
+	go func() {
+		defer f.Close()
+		defer close(linesOutput)
+
+		reader := bufio.NewReaderSize(f, chunkSize)
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					if line != "" {
+						linesOutput <- line
+					}
 					break
 				}
-				fmt.Printf("read: %s%s\n", curLine, line)
-				curLine = ""
+				fmt.Printf("read error: %v\n", err.Error())
+				return
 			}
+			linesOutput <- line
 		}
-	}
+	}()
+	return linesOutput
 }
